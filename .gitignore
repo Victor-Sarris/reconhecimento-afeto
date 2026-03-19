@@ -13,3 +13,5 @@ __pycache__/
 embeddings.pkl
 encodings.pickle
 dataset/
+logs_imagens/
+totem_banco.db

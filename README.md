@@ -32,3 +32,7 @@ pip install flask
 pip install opencv-python
 
 ```
+
+# API utilizada
+
+<a href="https://github.com/EvolutionAPI/evolution-api">Evolution API</a>

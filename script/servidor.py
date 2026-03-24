@@ -68,6 +68,48 @@ def cadastrar_usuario_db(nome, nivel="Aluno"):
         conn.close()
 
 
+def alinhar_rostos(image_rgb, face_location):
+    """
+    Recebe a imagem e rotaciona de forma que os olhos fiquem alinhados verticalmente (semelhante ao artigo do deepface)
+
+    ----- (VS | 2005 🔱🪽)
+    """
+
+    # Extrai os pontos covulacionais (boca, nariz, olhos e orelhas)
+    landmarks = face_recognition.face_landmarks(image_rgb, [face_location])
+
+    # se nao conseguir extrair
+    if not landmarks:
+        return image_rgb  # retorna a imagem original se nao achar os marcos
+
+    landmarks = landmarks[0]
+
+    if "left_eye" in landmarks and "right_eye" in landmarks:
+        left_eye_center = np.mean(landmarks["left_eye"], axis=0).astype("int")
+        right_eye_center = np.mean(landmarks["right_eye"], axis=0).astype("int")
+
+        # Calcula os diferencias entre os eixos X e Y
+        dY = right_eye_center[1] - left_eye_center[1]
+        dX = right_eye_center[0] - left_eye_center[0]
+
+        # Calcula o angulo de rotacao necessario
+        angle = np.degrees(np.arctan2(dY, dX))
+
+        # Calculta o ponto central entre os olhos
+        eyes_center = (
+            int((left_eye_center[0] + right_eye_center[0]) / 2),
+            int((left_eye_center[1] + right_eye_center[1]) / 2),
+        )
+
+        # obtem a matriz de rotacao e aplica a transformacao afim
+        M = cv2.getRotationMatrix2D(eyes_center, angle, 1.0)
+        h, w = image_rgb.shape[:2]
+        imagem_alinhada = cv2.warpAffine(image_rgb, M, (w, h), flags=cv2.INTER_CUBIC)
+
+        return imagem_alinhada
+    return image_rgb
+
+
 def registrar_acesso_db(nome, confianca, frame_capturado):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
@@ -129,19 +171,31 @@ def treinar_novas_fotos(nome, lista_fotos):
     novos_encodings = 0
 
     for img in lista_fotos:
-        filename = f"{pasta}/{count}.jpg"
-        cv2.imwrite(filename, img)
-        count += 1
-
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         boxes = face_recognition.face_locations(rgb, model="hog")
-        encs = face_recognition.face_encodings(rgb, boxes)
 
-        for enc in encs:
-            with lock:
-                lista_encodings.append(enc)
-                lista_nomes.append(nome)
-                novos_encodings += 1
+        if not boxes:
+            continue
+
+        box = boxes[0]
+
+        rgb_alinhado = alinhar_rostos(rgb, box)
+
+        # recaucula a posicao do rosto alinhado
+        novos_boxes = face_recognition.face_locations(rgb, model="hog")
+        if novos_boxes:
+            # salva a imagem alinhada para o log/dataset
+            filename = f"{pasta}/{count}.jpg"
+            cv2.imwrite(filename, cv2.cvtColor(rgb_alinhado, cv2.COLOR_RGB2BGR))
+            count += 1
+
+            encs = face_recognition.face_encodings(rgb_alinhado, novos_boxes)
+
+            for enc in encs:
+                with lock:
+                    lista_encodings.append(enc)
+                    lista_nomes.append(nome)
+                    novos_encodings += 1
 
     salvar_dados()
     return novos_encodings
@@ -163,27 +217,40 @@ def reconhecer_rosto():
     resultados = []
 
     if locs:
-        encs = face_recognition.face_encodings(rgb, locs)
-        for (top, right, bottom, left), enc in zip(locs, encs):
-            name = "Desconhecido"
+        for top, right, bottom, left in locs:
+            box = (top, right, bottom, left)
 
-            with lock:
-                if len(lista_encodings) > 0:
-                    face_distances = face_recognition.face_distance(
-                        lista_encodings, enc
+            rgb_alinhado = alinhar_rostos(rgb, box)
+
+            # Recalcula a bounding box na imagem rotacionada
+            locs_alinhado = face_recognition.face_locations(rgb_alinhado)
+
+            if locs_alinhado:
+                encs = face_recognition.face_encodings(rgb_alinhado, [locs_alinhado[0]])
+
+                if encs:
+                    enc = encs[0]
+                    name = "Desconhecido"
+
+                    with lock:
+                        if len(lista_nomes) > 0:
+                            face_distances = face_recognition.face_distance(
+                                lista_encodings, enc
+                            )
+                            best_match_index = np.argmin(face_distances)
+                            distancia_minima = face_distances[best_match_index]
+
+                            if distancia_minima < 0.5:
+                                name = lista_nomes[best_match_index]
+                                confianca_pct = round((1.0 - distancia_minima) * 100, 2)
+                                registrar_acesso_db(name, confianca_pct, img)
+
+                    resultados.append(
+                        {
+                            "nome": name,
+                            "box": [top * 4, right * 4, bottom * 4, left * 4],
+                        }
                     )
-                    best_match_index = np.argmin(face_distances)
-                    distancia_minima = face_distances[best_match_index]
-
-                    if distancia_minima < 0.5:
-                        name = lista_nomes[best_match_index]
-                        confianca_pct = round((1.0 - distancia_minima) * 100, 2)
-                        registrar_acesso_db(name, confianca_pct, img)
-
-            resultados.append(
-                {"nome": name, "box": [top * 4, right * 4, bottom * 4, left * 4]}
-            )
-
     return jsonify({"rostos": resultados}), 200
 
 

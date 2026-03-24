@@ -1,6 +1,6 @@
 ### Agora virou pessoal
 
-Rotas do Script:
+# Rotas do Script:
 
 ```python
 # Rota de Reconhecimento
@@ -15,4 +15,20 @@ http://127.0.0.1:5001/api/cadastrar_direto
 ```python
 # Rota de Relatorio
 http://127.0.0.1:5001/api/relatorio
+```
+
+# Bibliotes necessarias:
+
+```python
+
+pip install "setuptools<81"
+
+pip install requests
+
+pip install face_recognition
+
+pip install flask
+
+pip install opencv-python
+
 ```

@@ -217,27 +217,40 @@ def reconhecer_rosto():
     resultados = []
 
     if locs:
-        encs = face_recognition.face_encodings(rgb, locs)
-        for (top, right, bottom, left), enc in zip(locs, encs):
-            name = "Desconhecido"
+        for top, right, bottom, left in locs:
+            box = (top, right, bottom, left)
 
-            with lock:
-                if len(lista_encodings) > 0:
-                    face_distances = face_recognition.face_distance(
-                        lista_encodings, enc
+            rgb_alinhado = alinhar_rostos(rgb, box)
+
+            # Recalcula a bounding box na imagem rotacionada
+            locs_alinhado = face_recognition.face_locations(rgb_alinhado)
+
+            if locs_alinhado:
+                encs = face_recognition.face_encodings(rgb_alinhado, [locs_alinhado[0]])
+
+                if encs:
+                    enc = encs[0]
+                    name = "Desconhecido"
+
+                    with lock:
+                        if len(lista_nomes) > 0:
+                            face_distances = face_recognition.face_distance(
+                                lista_encodings, enc
+                            )
+                            best_match_index = np.argmin(face_recognition)
+                            distancia_minima = face_distances[best_match_index]
+
+                            if distancia_minima < 0.5:
+                                name = lista_nomes[best_match_index]
+                                confianca_pct = round((1.0 - face_distances) * 100, 2)
+                                registrar_acesso_db(name.confianca_pct, img)
+
+                    resultados.append(
+                        {
+                            "nome": name,
+                            "box": [top * 4, right * 4, bottom * 4, left * 4],
+                        }
                     )
-                    best_match_index = np.argmin(face_distances)
-                    distancia_minima = face_distances[best_match_index]
-
-                    if distancia_minima < 0.5:
-                        name = lista_nomes[best_match_index]
-                        confianca_pct = round((1.0 - distancia_minima) * 100, 2)
-                        registrar_acesso_db(name, confianca_pct, img)
-
-            resultados.append(
-                {"nome": name, "box": [top * 4, right * 4, bottom * 4, left * 4]}
-            )
-
     return jsonify({"rostos": resultados}), 200
 
 

@@ -97,9 +97,9 @@ def alinhar_rostos(image_rgb, face_location):
 
         # Calculta o ponto central entre os olhos
         eyes_center = (
-            left_eye_center[0] + right_eye_center[0] // 2,
-            left_eye_center[1] + right_eye_center[1],
-        ) // 2
+            int((left_eye_center[0] + right_eye_center[0]) / 2),
+            int((left_eye_center[1] + right_eye_center[1]) / 2),
+        )
 
         # obtem a matriz de rotacao e aplica a transformacao afim
         M = cv2.getRotationMatrix2D(eyes_center, angle, 1.0)

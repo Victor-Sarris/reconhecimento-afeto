@@ -7,6 +7,8 @@ import os
 import sqlite3
 from datetime import datetime
 from flask import Flask, jsonify, request
+import threading
+import requests
 
 # CONFIGURAÇÕES
 ARQUIVO_DADOS = "encodings.pickle"
@@ -33,7 +35,8 @@ def iniciar_banco():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT UNIQUE,
             data_cadastro DATETIME,
-            nivel_acesso TEXT
+            nivel_acesso TEXT,
+            telefone_responsavel TEXT
         )
     """
     )
@@ -53,13 +56,13 @@ def iniciar_banco():
     conn.close()
 
 
-def cadastrar_usuario_db(nome, nivel="Aluno"):
+def cadastrar_usuario_db(nome, nivel="Aluno", telefone=None):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
     try:
         c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso) VALUES (?, ?, ?)",
-            (nome, datetime.now(), nivel),
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel) VALUES (?, ?, ?, ?)",
+            (nome, datetime.now(), nivel, telefone),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -159,9 +162,9 @@ def salvar_dados():
         f.write(pickle.dumps(data))
 
 
-def treinar_novas_fotos(nome, lista_fotos):
+def treinar_novas_fotos(nome, lista_fotos, telefone=""):
     global lista_encodings, lista_nomes
-    cadastrar_usuario_db(nome)
+    cadastrar_usuario_db(nome, telefone=telefone)
 
     pasta = os.path.join(PASTA_DATASET, nome)
     if not os.path.exists(pasta):
@@ -182,7 +185,7 @@ def treinar_novas_fotos(nome, lista_fotos):
         rgb_alinhado = alinhar_rostos(rgb, box)
 
         # recaucula a posicao do rosto alinhado
-        novos_boxes = face_recognition.face_locations(rgb, model="hog")
+        novos_boxes = face_recognition.face_locations(rgb_alinhado, model="hog")
         if novos_boxes:
             # salva a imagem alinhada para o log/dataset
             filename = f"{pasta}/{count}.jpg"
@@ -199,6 +202,90 @@ def treinar_novas_fotos(nome, lista_fotos):
 
     salvar_dados()
     return novos_encodings
+
+
+# --- FUNÇÃO DE ENVIO DE WHATSAPP ---
+def enviar_whatsapp_assincrono(nome_reconhecido, telefone_destino):
+    """
+    Envia WhatsApp usando a Evolution API open-source rodando localmente.
+    """
+    if not telefone_destino:
+        return
+
+    # URL da Evolution API (ajuste a porta se necessário e o NOME_DA_INSTANCIA)
+    url_api = "http://127.0.0.1:8080/message/sendText/totem_afeto"
+
+    headers = {
+        "apikey": "AfetoTotem2026",  # Senha que você define ao rodar a API
+        "Content-Type": "application/json",
+    }
+
+    # O WhatsApp exige o formato internacional: DDI + DDD + NÚMERO
+    # Exemplo: 55 89 999999999. Vamos garantir que tenha o 55 do Brasil.
+    # Removendo espaços, traços ou parênteses que possam vir do banco
+    numero_limpo = "".join(filter(str.isdigit, str(telefone_destino)))
+    if not numero_limpo.startswith("55"):
+        numero_limpo = f"55{numero_limpo}"
+
+    payload = {
+        "number": numero_limpo,
+        "text": f"🤖 *Totem Instituto Afeto*\n\nOlá! O sistema de reconhecimento facial registrou a entrada de *{nome_reconhecido}* com sucesso.",
+        "delay": 1500,  # A v2 já reconhece isso automaticamente para simular o "digitando..."
+    }
+
+    try:
+        # Faz a requisição para a API local
+        resposta = requests.post(url_api, json=payload, headers=headers, timeout=10)
+
+        if resposta.status_code in [200, 201]:
+            print(f"[LOG] Notificação de entrada enviada para {numero_limpo}")
+        else:
+            print(f"[ERRO] Falha ao enviar WhatsApp: {resposta.text}")
+
+    except Exception as e:
+        print(f"[ERRO] Servidor do WhatsApp offline ou inacessível: {e}")
+
+
+# --- ATUALIZANDO O REGISTRO DE ACESSO ---
+def registrar_acesso_db(nome, confianca, frame_capturado):
+    conn = sqlite3.connect(BANCO_DADOS)
+    c = conn.cursor()
+    # Agora buscamos também o telefone
+    c.execute("SELECT id, telefone_responsavel FROM Usuarios WHERE nome = ?", (nome,))
+    row = c.fetchone()
+
+    telefone_resp = None
+
+    if not row:
+        c.execute(
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso) VALUES (?, ?, ?)",
+            (nome, datetime.now(), "Migrado"),
+        )
+        conn.commit()
+        user_id = c.lastrowid
+    else:
+        user_id = row[0]
+        telefone_resp = row[1]  # Pega o telefone do banco
+
+    agora_dt = datetime.now()
+    nome_arquivo = f"{PASTA_LOGS}/{agora_dt.strftime('%Y%m%d_%H%M%S')}_{nome.replace(' ', '_')}.jpg"
+    cv2.imwrite(nome_arquivo, frame_capturado)
+
+    c.execute(
+        """
+        INSERT INTO Logs_Acesso (usuario_id, data_hora, confianca_reconhecimento, foto_momento)
+        VALUES (?, ?, ?, ?)
+    """,
+        (user_id, agora_dt, confianca, nome_arquivo),
+    )
+    conn.commit()
+    conn.close()
+
+    # Dispara a mensagem via Thread para não causar delay/lag na câmera do totem
+    if telefone_resp:
+        threading.Thread(
+            target=enviar_whatsapp_assincrono, args=(nome, telefone_resp)
+        ).start()
 
 
 # --- ROTAS DA API ---
@@ -262,6 +349,7 @@ def cadastrar_direto():
 
     files = request.files.getlist("fotos")
     name = request.form["nome"]
+    telefone = request.form.get("telefone", "")
     lista_fotos = []
 
     for file in files:
@@ -269,7 +357,7 @@ def cadastrar_direto():
         lista_fotos.append(img)
 
     try:
-        total_treinado = treinar_novas_fotos(name, lista_fotos)
+        total_treinado = treinar_novas_fotos(name, lista_fotos, telefone)
         return (
             jsonify(
                 {

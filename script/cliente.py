@@ -19,9 +19,11 @@ COR_RECONHECIDO = (0, 255, 0)
 MODO_RECONHECIMENTO = 0
 MODO_ESCOLHA_NOME = 1
 MODO_CAPTURANDO = 2
+MODO_ESCOLHA_TELEFONE = 3
 
 estado_atual = MODO_RECONHECIMENTO
 nome_novo_cadastro = ""
+telefone_novo_cadastro = ""
 buffer_fotos_novas = []
 ultimo_envio = 0
 rostos_detectados = []
@@ -96,7 +98,7 @@ def desenhar_botao(frame, pt1, pt2, texto, ativo=False):
 
 
 def gerenciar_cliques(event, x, y, flags, param):
-    global estado_atual, nome_novo_cadastro, buffer_fotos_novas, mensagem_status, tempo_status
+    global estado_atual, nome_novo_cadastro, telefone_novo_cadastro, buffer_fotos_novas, mensagem_status, tempo_status
     y_min = ALTURA_TELA - 80
     y_max = ALTURA_TELA - 20
 
@@ -108,6 +110,7 @@ def gerenciar_cliques(event, x, y, flags, param):
             elif 350 < x < 600:
                 estado_atual = MODO_ESCOLHA_NOME
                 nome_novo_cadastro = ""
+                telefone_novo_cadastro = ""
                 buffer_fotos_novas = []
 
 
@@ -136,7 +139,7 @@ def enviar_cadastro_para_servidor():
         _, buffer = cv2.imencode(".jpg", frame)
         files.append(("fotos", (f"frame_{count}.jpg", buffer.tobytes(), "image/jpeg")))
 
-    data = {"nome": nome_novo_cadastro}
+    data = {"nome": nome_novo_cadastro, "telefone": telefone_novo_cadastro}
 
     try:
         url = URL_SERVIDOR + "/cadastrar_direto"
@@ -242,6 +245,38 @@ while True:
             1,
         )
 
+    # MODO DIGITAÇÃO DE TELEFONE
+    elif estado_atual == MODO_ESCOLHA_TELEFONE:
+        cv2.rectangle(frame, (100, 100), (LARGURA_TELA - 100, 300), (0, 0, 0), -1)
+        cv2.rectangle(frame, (100, 100), (LARGURA_TELA - 100, 300), COR_TEXTO, 2)
+        cv2.putText(
+            frame,
+            "DIGITE O TELEFONE (DDD + NUMERO):",
+            (150, 150),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            COR_TEXTO,
+            2,
+        )
+        cv2.putText(
+            frame,
+            f"{telefone_novo_cadastro}_",
+            (150, 230),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.5,
+            COR_STATUS,
+            3,
+        )
+        cv2.putText(
+            frame,
+            "[ENTER] para Capturar Fotos | [ESC] para Cancelar",
+            (250, 280),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            COR_TEXTO,
+            1,
+        )
+
     # MODO CAPTURA DE FOTOS
     elif estado_atual == MODO_CAPTURANDO:
         cv2.rectangle(frame, (0, 0), (LARGURA_TELA, 100), (200, 100, 0), -1)
@@ -268,17 +303,29 @@ while True:
         break
 
     if estado_atual == MODO_ESCOLHA_NOME:
-        if key == 13:
+        if key == 13:  # Enter
             if nome_novo_cadastro:
-                estado_atual = MODO_CAPTURANDO
-                buffer_fotos_novas = []
-        elif key == 27:
+                estado_atual = MODO_ESCOLHA_TELEFONE  # Vai para a tela de telefone
+        elif key == 27:  # Esc
             estado_atual = MODO_RECONHECIMENTO
             nome_novo_cadastro = ""
-        elif key == 8:
+        elif key == 8:  # Backspace
             nome_novo_cadastro = nome_novo_cadastro[:-1]
         elif 32 <= key <= 126:
             nome_novo_cadastro += chr(key)
+
+    elif estado_atual == MODO_ESCOLHA_TELEFONE:
+        if key == 13:  # Enter
+            estado_atual = MODO_CAPTURANDO  # Vai para as fotos
+            buffer_fotos_novas = []
+        elif key == 27:  # Esc
+            estado_atual = MODO_RECONHECIMENTO
+            nome_novo_cadastro = ""
+            telefone_novo_cadastro = ""
+        elif key == 8:  # Backspace
+            telefone_novo_cadastro = telefone_novo_cadastro[:-1]
+        elif ord("0") <= key <= ord("9"):  # Aceita APENAS números
+            telefone_novo_cadastro += chr(key)
 
     elif estado_atual == MODO_CAPTURANDO:
         if key == 13:

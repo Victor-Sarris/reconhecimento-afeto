@@ -32,3 +32,31 @@ pip install flask
 pip install opencv-python
 
 ```
+
+# API utilizada
+
+<a href="https://github.com/EvolutionAPI/evolution-api">Evolution API</a>
+
+```powershell
+# Instalacao de dependencias
+npm install
+```
+
+```powershell
+# Migracao de dados para o banco
+npm run db:deploy
+
+# Caso de erro:
+
+npm run db:deploy:win
+```
+
+```powershell
+# Instalacao de dependencias
+npm run build
+```
+
+```powershell
+# Instalacao de dependencias
+npm run start:prod
+```

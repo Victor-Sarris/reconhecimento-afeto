@@ -76,11 +76,11 @@ def alinhar_rostos(image_rgb, face_location):
     """
 
     # Extrai os pontos covulacionais (boca, nariz, olhos e orelhas)
-    landmarks = face_recognition.face_landmarks(image_rgb), [face_location]
+    landmarks = face_recognition.face_landmarks(image_rgb, [face_location])
 
     # se nao conseguir extrair
     if not landmarks:
-        return img_rgb  # retorna a imagem original se nao achar os marcos
+        return image_rgb  # retorna a imagem original se nao achar os marcos
 
     landmarks = landmarks[0]
 
@@ -182,20 +182,20 @@ def treinar_novas_fotos(nome, lista_fotos):
         rgb_alinhado = alinhar_rostos(rgb, box)
 
         # recaucula a posicao do rosto alinhado
-        novos_boxes = face_recognition.face_locations(rgb, model="nog")
+        novos_boxes = face_recognition.face_locations(rgb, model="hog")
         if novos_boxes:
             # salva a imagem alinhada para o log/dataset
             filename = f"{pasta}/{count}.jpg"
-            cv2.imwrite(filename, cv2.cvtColor(rgb_alinhado, cv2.COLOR_RGB2RGB))
+            cv2.imwrite(filename, cv2.cvtColor(rgb_alinhado, cv2.COLOR_RGB2BGR))
             count += 1
 
             encs = face_recognition.face_encodings(rgb_alinhado, novos_boxes)
 
-        for enc in encs:
-            with lock:
-                lista_encodings.append(enc)
-                lista_nomes.append(nome)
-                novos_encodings += 1
+            for enc in encs:
+                with lock:
+                    lista_encodings.append(enc)
+                    lista_nomes.append(nome)
+                    novos_encodings += 1
 
     salvar_dados()
     return novos_encodings
@@ -237,13 +237,13 @@ def reconhecer_rosto():
                             face_distances = face_recognition.face_distance(
                                 lista_encodings, enc
                             )
-                            best_match_index = np.argmin(face_recognition)
+                            best_match_index = np.argmin(face_distances)
                             distancia_minima = face_distances[best_match_index]
 
                             if distancia_minima < 0.5:
                                 name = lista_nomes[best_match_index]
-                                confianca_pct = round((1.0 - face_distances) * 100, 2)
-                                registrar_acesso_db(name.confianca_pct, img)
+                                confianca_pct = round((1.0 - distancia_minima) * 100, 2)
+                                registrar_acesso_db(name, confianca_pct, img)
 
                     resultados.append(
                         {

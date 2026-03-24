@@ -68,7 +68,7 @@ def cadastrar_usuario_db(nome, nivel="Aluno"):
         conn.close()
 
 
-def alinhar_rostos(img_rgb, face_location):
+def alinhar_rostos(image_rgb, face_location):
     """
     Recebe a imagem e rotaciona de forma que os olhos fiquem alinhados verticalmente (semelhante ao artigo do deepface)
 
@@ -76,7 +76,7 @@ def alinhar_rostos(img_rgb, face_location):
     """
 
     # Extrai os pontos covulacionais (boca, nariz, olhos e orelhas)
-    landmarks = face_recognition.face_landmarks(img_rgb), [face_location]
+    landmarks = face_recognition.face_landmarks(image_rgb), [face_location]
 
     # se nao conseguir extrair
     if not landmarks:

@@ -68,6 +68,48 @@ def cadastrar_usuario_db(nome, nivel="Aluno"):
         conn.close()
 
 
+def alinhar_rostos(img_rgb, face_location):
+    """
+    Recebe a imagem e rotaciona de forma que os olhos fiquem alinhados verticalmente (semelhante ao artigo do deepface)
+
+    ----- (VS | 2005 🔱🪽)
+    """
+
+    # Extrai os pontos covulacionais (boca, nariz, olhos e orelhas)
+    landmarks = face_recognition.face_landmarks(img_rgb), [face_location]
+
+    # se nao conseguir extrair
+    if not landmarks:
+        return img_rgb  # retorna a imagem original se nao achar os marcos
+
+    landmarks = landmarks[0]
+
+    if "left_eye" in landmarks and "right_eye" in landmarks:
+        left_eye_center = np.mean(landmarks["left_eye"], axis=0).astype("int")
+        right_eye_center = np.mean(landmarks["right_eye"], axis=0).astype("int")
+
+        # Calcula os diferencias entre os eixos X e Y
+        dY = right_eye_center[1] - left_eye_center[1]
+        dX = right_eye_center[0] - left_eye_center[0]
+
+        # Calcula o angulo de rotacao necessario
+        angle = np.degrees(np.arctan2(dY, dX))
+
+        # Calculta o ponto central entre os olhos
+        eyes_center = (
+            left_eye_center[0] + right_eye_center[0] // 2,
+            left_eye_center[1] + right_eye_center[1],
+        ) // 2
+
+        # obtem a matriz de rotacao e aplica a transformacao afim
+        M = cv2.getRotationMatrix2D(eyes_center, angle, 1.0)
+        h, w = image_rgb.shape[:2]
+        imagem_alinhada = cv2.warpAffine(image_rgb, M, (w, h), flags=cv2.INTER_CUBIC)
+
+        return imagem_alinhada
+    return image_rgb
+
+
 def registrar_acesso_db(nome, confianca, frame_capturado):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()

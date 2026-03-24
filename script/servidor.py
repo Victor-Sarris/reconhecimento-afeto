@@ -171,13 +171,25 @@ def treinar_novas_fotos(nome, lista_fotos):
     novos_encodings = 0
 
     for img in lista_fotos:
-        filename = f"{pasta}/{count}.jpg"
-        cv2.imwrite(filename, img)
-        count += 1
-
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         boxes = face_recognition.face_locations(rgb, model="hog")
-        encs = face_recognition.face_encodings(rgb, boxes)
+
+        if not boxes:
+            continue
+
+        box = boxes[0]
+
+        rgb_alinhado = alinhar_rostos(rgb, box)
+
+        # recaucula a posicao do rosto alinhado
+        novos_boxes = face_recognition.face_locations(rgb, model="nog")
+        if novos_boxes:
+            # salva a imagem alinhada para o log/dataset
+            filename = f"{pasta}/{count}.jpg"
+            cv2.imwrite(filename, cv2.cvtColor(rgb_alinhado, cv2.COLOR_RGB2RGB))
+            count += 1
+
+            encs = face_recognition.face_encodings(rgb_alinhado, novos_boxes)
 
         for enc in encs:
             with lock:

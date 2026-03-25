@@ -26,6 +26,8 @@ nome_novo_cadastro = ""
 telefone_novo_cadastro = ""
 buffer_fotos_novas = []
 ultimo_envio = 0
+fim_pausa = 0
+nome_pausa = ""
 rostos_detectados = []
 mensagem_status = ""
 tempo_status = 0
@@ -180,38 +182,85 @@ while True:
 
     # MODO RECONHECIMENTO
     if estado_atual == MODO_RECONHECIMENTO:
-        if (agora - ultimo_envio) > INTERVALO_SCAN:
-            ultimo_envio = agora
-            _, buffer = cv2.imencode(".jpg", frame)
+        if agora < fim_pausa:
+            cv2.rectangle(
+                frame,
+                (100, int(ALTURA_TELA / 2 - 150)),
+                (LARGURA_TELA - 100, int(ALTURA_TELA / 2 + 50)),
+                (0, 50, 0),
+                -1,
+            )
+            cv2.rectangle(
+                frame,
+                (100, int(ALTURA_TELA / 2 - 150)),
+                (LARGURA_TELA - 100, int(ALTURA_TELA / 2 + 50)),
+                (0, 255, 0),
+                3,
+            )
 
-            try:
-                url = URL_SERVIDOR + "/reconhecer"
-                resposta = requests.post(
-                    url,
-                    files={"foto": ("frame.jpg", buffer.tobytes(), "image/jpeg")},
-                    timeout=2,
-                )
-                if resposta.status_code == 200:
-                    dados = resposta.json()
-                    rostos_detectados = dados.get("rostos", [])
-            except requests.exceptions.RequestException:
-                rostos_detectados = []
-
-        for rosto in rostos_detectados:
-            top, right, bottom, left = rosto["box"]
-            nome = rosto["nome"]
-            cor = COR_RECONHECIDO if nome != "Desconhecido" else (0, 0, 255)
-            cv2.rectangle(frame, (left, top), (right, bottom), cor, 2)
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), cor, cv2.FILLED)
             cv2.putText(
                 frame,
-                nome,
-                (left + 6, bottom - 6),
+                "ACESSO LIBERADO",
+                (150, int(ALTURA_TELA / 2 - 50)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                1,
+                2.0,
+                (0, 255, 0),
+                5,
             )
+            cv2.putText(
+                frame,
+                nome_pausa,
+                (150, int(ALTURA_TELA / 2 + 20)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.5,
+                (255, 255, 255),
+                3,
+            )
+        else:
+            if (agora - ultimo_envio) > INTERVALO_SCAN:
+                ultimo_envio = agora
+                _, buffer = cv2.imencode(".jpg", frame)
+
+                try:
+                    url = URL_SERVIDOR + "/reconhecer"
+                    resposta = requests.post(
+                        url,
+                        files={"foto": ("frame.jpg", buffer.tobytes(), "image/jpeg")},
+                        timeout=2,
+                    )
+                    if resposta.status_code == 200:
+                        dados = resposta.json()
+                        rostos_detectados = dados.get("rostos", [])
+
+                        for rosto in rostos_detectados:
+                            if rosto["nome"] != "Desconhecido":
+                                fim_pausa = (
+                                    agora + 10.0
+                                )  # Trava o reconhecimento por 10 segundos
+                                nome_pausa = rosto["nome"]
+                                rostos_detectados = []
+                                break
+
+                except requests.exceptions.RequestException:
+                    rostos_detectados = []
+
+            for rosto in rostos_detectados:
+                top, right, bottom, left = rosto["box"]
+                nome = rosto["nome"]
+                cor = COR_RECONHECIDO if nome != "Desconhecido" else (0, 0, 255)
+                cv2.rectangle(frame, (left, top), (right, bottom), cor, 2)
+                cv2.rectangle(
+                    frame, (left, bottom - 35), (right, bottom), cor, cv2.FILLED
+                )
+                cv2.putText(
+                    frame,
+                    nome,
+                    (left + 6, bottom - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 255, 255),
+                    1,
+                )
 
     # MODO DIGITAÇÃO DE NOME
     elif estado_atual == MODO_ESCOLHA_NOME:
@@ -299,8 +348,8 @@ while True:
     # --- EVENTOS DE TECLADO ---
     key = cv2.waitKey(1) & 0xFF
 
-    if key == ord("q"):
-        break
+    # if key == 27:
+    #     break
 
     if estado_atual == MODO_ESCOLHA_NOME:
         if key == 13:  # Enter

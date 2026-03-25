@@ -9,6 +9,7 @@ from datetime import datetime
 from flask import Flask, jsonify, request
 import threading
 import requests
+import time
 
 # CONFIGURAÇÕES
 ARQUIVO_DADOS = "encodings.pickle"
@@ -229,8 +230,8 @@ def enviar_whatsapp_assincrono(nome_reconhecido, telefone_destino):
 
     payload = {
         "number": numero_limpo,
-        "text": f"🤖 *Totem Instituto Afeto*\n\nOlá! O sistema de reconhecimento facial registrou a entrada de *{nome_reconhecido}* com sucesso.",
-        "delay": 1500,  # A v2 já reconhece isso automaticamente para simular o "digitando..."
+        "text": f"🤖👨‍👩‍👧‍👦❤️ *Instituto Afeto*\n\nOlá! O sistema de reconhecimento facial registrou a entrada de *{nome_reconhecido}* com sucesso. Caso tenha alguma dúvida, fique a vontade para entrar em contato.",
+        "delay": 1500,  # simular o "digitando..."
     }
 
     try:
@@ -244,6 +245,8 @@ def enviar_whatsapp_assincrono(nome_reconhecido, telefone_destino):
 
     except Exception as e:
         print(f"[ERRO] Servidor do WhatsApp offline ou inacessível: {e}")
+
+    time.sleep(1)
 
 
 # --- ATUALIZANDO O REGISTRO DE ACESSO ---

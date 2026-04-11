@@ -11,6 +11,7 @@ import threading
 import requests
 import time
 from functools import wraps
+from waitress import serve
 
 # CONFIGURAÇÕES
 ARQUIVO_DADOS = "encodings.pickle"
@@ -414,4 +415,14 @@ def relatorio_acessos():
 if __name__ == "__main__":
     iniciar_banco()
     carregar_dados()
-    app.run(host="0.0.0.0", port=5001, debug=False)
+
+    print("===================================================")
+    print("🚀 SERVIDOR DE PRODUÇÃO (WAITRESS) INICIADO")
+    print("🏥 Clínica: Instituto Afeto")
+    print("📡 Escutando na porta: 5001")
+    print("===================================================")
+
+    # O Waitress gerencia múltiplas threads.
+    # Colocamos threads=6 para lidar com vários reconhecimentos
+    # simultâneos sem criar gargalos na CPU.
+    serve(app, host="0.0.0.0", port=5001, threads=6)

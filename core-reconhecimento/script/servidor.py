@@ -21,10 +21,13 @@ PASTA_DATASET = "dataset"
 DELAY_RECONHECIMENTO = 5.0
 CHAVE_SECRETA_CLINICA = "AFETOEIFPI"
 
+# variaveis globais de memoria
 app = Flask(__name__)
 lock = threading.Lock()
 lista_encodings = []
 lista_nomes = []
+conhecidos_encodings = []
+conhecidos_nomes = []
 
 
 def validar_api_key(f):
@@ -52,7 +55,8 @@ def iniciar_banco():
             data_cadastro DATETIME,
             nivel_acesso TEXT,
             telefone_responsavel TEXT,
-            consentimento_lgpd BOOLEAN DEFAULT 1
+            consentimento_lgpd BOOLEAN DEFAULT 1,
+            face_encoding BLOB
         )
     """
     )
@@ -72,13 +76,15 @@ def iniciar_banco():
     conn.close()
 
 
-def cadastrar_usuario_db(nome, nivel="Aluno", telefone=None):
+def cadastrar_usuario_db(nome, encoding, nivel="Paciente", telefone=None):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
     try:
+        encoding_bytes = encoding.tobytes()
+
         c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel, consentimento_lgpd) VALUES (?, ?, ?, ?, ?)",
-            (nome, datetime.now(), nivel, telefone, 1),
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel, consentimento_lgpd, face_encoding) VALUES (?, ?, ?, ?, ?, ?)",
+            (nome, datetime.now(), nivel, telefone, 1, encoding_bytes),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -161,15 +167,32 @@ def registrar_acesso_db(nome, confianca, frame_capturado):
         ).start()
 
 
-def carregar_dados():
-    global lista_encodings, lista_nomes
-    try:
-        with open(ARQUIVO_DADOS, "rb") as f:
-            data = pickle.load(f)
-        lista_encodings = data["encodings"]
-        lista_nomes = data["names"]
-    except FileNotFoundError:
-        lista_encodings, lista_nomes = [], []
+def carregar_conhecidos_do_banco():
+    global conhecidos_encodings, conhecidos_nomes
+    conhecidos_encodings.clear()
+    conhecidos_nomes.clear()
+
+    conn = sqlite3.connect(BANCO_DADOS)
+    c = conn.cursor()
+    c.execute(
+        "SELECT nome, face_encoding FROM Usuarios WHERE face_encoding IS NOT NULL"
+    )
+    linhas = c.fetchall()
+
+    for linha in linhas:
+        nome = linha[0]
+        encoding_bytes = linha[1]
+
+        # Converte de volta: de Binário para o array matemático (float64) exigido pelo OpenCV/FaceRecognition
+        encoding_array = np.frombuffer(encoding_bytes, dtype=np.float64)
+
+        conhecidos_nomes.append(nome)
+        conhecidos_encodings.append(encoding_array)
+
+    conn.close()
+    print(
+        f"[Banco de Dados] {len(conhecidos_nomes)} biometrias carregadas com sucesso."
+    )
 
 
 def salvar_dados():
@@ -414,7 +437,7 @@ def relatorio_acessos():
 
 if __name__ == "__main__":
     iniciar_banco()
-    carregar_dados()
+    carregar_conhecidos_do_banco()
 
     print("===================================================")
     print("🚀 SERVIDOR DE PRODUÇÃO (WAITRESS) INICIADO")

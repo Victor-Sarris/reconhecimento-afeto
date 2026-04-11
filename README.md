@@ -19,6 +19,9 @@ http://127.0.0.1:5001/api/relatorio
 
 # Bibliotes necessarias:
 
+Nota: As bibliotecas terao que ser instaladas no diretorio: C:\script\reconhecimento-afeto\core-reconhecimento
+(crie uma venv antes de fazer a instalacao)
+
 ```python
 
 pip install "setuptools<81"
@@ -30,6 +33,8 @@ pip install face_recognition
 pip install flask
 
 pip install opencv-python
+
+pip install waitress
 
 ```
 

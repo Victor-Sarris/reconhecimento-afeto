@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request
 import threading
 import requests
 import time
+from functools import wraps
 
 # CONFIGURAÇÕES
 ARQUIVO_DADOS = "encodings.pickle"
@@ -17,11 +18,23 @@ BANCO_DADOS = "totem_banco.db"
 PASTA_LOGS = "logs_imagens"
 PASTA_DATASET = "dataset"
 DELAY_RECONHECIMENTO = 5.0
+CHAVE_SECRETA_CLINICA = "AFETOEIFPI"
 
 app = Flask(__name__)
 lock = threading.Lock()
 lista_encodings = []
 lista_nomes = []
+
+
+def validar_api_key(f):
+    @wraps(f)
+    def funcao_protegida(*args, **kwargs):
+        chave_recebida = request.headers.get("x-api-key")
+        if chave_recebida == CHAVE_SECRETA_CLINICA:
+            return f(*args, **kwargs)
+        return jsonify({"erro": "Acesso Negado: Chave de segurança inválida"}), 403
+
+    return funcao_protegida
 
 
 # --- BANCO DE DADOS E ARMAZENAMENTO ---
@@ -37,7 +50,8 @@ def iniciar_banco():
             nome TEXT UNIQUE,
             data_cadastro DATETIME,
             nivel_acesso TEXT,
-            telefone_responsavel TEXT
+            telefone_responsavel TEXT,
+            consentimento_lgpd BOOLEAN DEFAULT 1
         )
     """
     )
@@ -62,8 +76,8 @@ def cadastrar_usuario_db(nome, nivel="Aluno", telefone=None):
     c = conn.cursor()
     try:
         c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel) VALUES (?, ?, ?, ?)",
-            (nome, datetime.now(), nivel, telefone),
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel, consentimento_lgpd) VALUES (?, ?, ?, ?, ?)",
+            (nome, datetime.now(), nivel, telefone, 1),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -117,32 +131,33 @@ def alinhar_rostos(image_rgb, face_location):
 def registrar_acesso_db(nome, confianca, frame_capturado):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
-    c.execute("SELECT id FROM Usuarios WHERE nome = ?", (nome,))
+    c.execute("SELECT id, telefone_responsavel FROM Usuarios WHERE nome = ?", (nome,))
     row = c.fetchone()
 
+    telefone_resp = None
+
     if not row:
-        c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso) VALUES (?, ?, ?)",
-            (nome, datetime.now(), "Migrado"),
-        )
-        conn.commit()
-        user_id = c.lastrowid
+        conn.close()
+        return
     else:
         user_id = row[0]
+        telefone_resp = row[1]
 
     agora_dt = datetime.now()
-    nome_arquivo = f"{PASTA_LOGS}/{agora_dt.strftime('%Y%m%d_%H%M%S')}_{nome.replace(' ', '_')}.jpg"
-    cv2.imwrite(nome_arquivo, frame_capturado)
-
     c.execute(
         """
         INSERT INTO Logs_Acesso (usuario_id, data_hora, confianca_reconhecimento, foto_momento)
         VALUES (?, ?, ?, ?)
     """,
-        (user_id, agora_dt, confianca, nome_arquivo),
+        (user_id, agora_dt, confianca, "Imagem retida por privacidade (LGPD)"),
     )
     conn.commit()
     conn.close()
+
+    if telefone_resp:
+        threading.Thread(
+            target=enviar_whatsapp_assincrono, args=(nome, telefone_resp)
+        ).start()
 
 
 def carregar_dados():
@@ -293,6 +308,7 @@ def registrar_acesso_db(nome, confianca, frame_capturado):
 
 # --- ROTAS DA API ---
 @app.route("/api/reconhecer", methods=["POST"])
+@validar_api_key
 def reconhecer_rosto():
     if "foto" not in request.files:
         return jsonify({"erro": "Nenhuma foto enviada"}), 400
@@ -345,6 +361,7 @@ def reconhecer_rosto():
 
 
 @app.route("/api/cadastrar_direto", methods=["POST"])
+@validar_api_key
 def cadastrar_direto():
     global lista_encodings, lista_nomes
     if "fotos" not in request.files or "nome" not in request.form:
@@ -374,6 +391,7 @@ def cadastrar_direto():
 
 
 @app.route("/api/relatorio", methods=["GET"])
+@validar_api_key
 def relatorio_acessos():
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()

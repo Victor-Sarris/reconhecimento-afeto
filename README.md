@@ -63,6 +63,13 @@ npm run start:prod
 
 ================== Configuração de BAT file ==================
 
+```
+Chave para acessar a API:
+AFETOEIFPI
+```
+
+================== Configuração de BAT file ==================
+
 ### 1. Faxina de Desenvolvimento (Reset do Sistema)
 
 <p>Antes de cadastrar pessoas reais, precisamos apagar todos os "lixos" e rostos distorcidos que geramos durante os testes de código para que a inteligência artificial não fique confusa.</p>

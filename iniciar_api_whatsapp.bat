@@ -1,4 +1,5 @@
 @echo off
+title Totem Afeto - API 
 echo ===================================================
 echo      A INICIAR SISTEMA TOTEM - INSTITUTO AFETO     
 echo ===================================================

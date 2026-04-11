@@ -386,30 +386,36 @@ def reconhecer_rosto():
 
 @app.route("/api/cadastrar_direto", methods=["POST"])
 @validar_api_key
+@app.route("/api/cadastrar_direto", methods=["POST"])
+@validar_api_key
 def cadastrar_direto():
-    global lista_encodings, lista_nomes
-    if "fotos" not in request.files or "nome" not in request.form:
-        return jsonify({"erro": "Dados incompletos. Envie 'fotos' e 'nome'."}), 400
-
-    files = request.files.getlist("fotos")
-    name = request.form["nome"]
-    telefone = request.form.get("telefone", "")
-    lista_fotos = []
-
-    for file in files:
-        img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
-        lista_fotos.append(img)
-
     try:
-        total_treinado = treinar_novas_fotos(name, lista_fotos, telefone)
-        return (
-            jsonify(
-                {
-                    "msg": f"Sucesso! {name} cadastrado com {total_treinado} novos vetores faciais."
-                }
-            ),
-            201,
-        )
+        nome = request.form.get("nome")
+        telefone = request.form.get("telefone")
+
+        if not nome or "foto" not in request.files:
+            return jsonify({"erro": "Nome ou foto ausente"}), 400
+
+        foto = request.files["foto"]
+
+        file_bytes = np.frombuffer(foto.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        encodings = face_recognition.face_encodings(rgb_img)
+        if len(encodings) > 0:
+            encoding_capturado = encodings[0]
+
+            cadastrar_usuario_db(
+                nome, encoding_capturado, nivel="Paciente", telefone=telefone
+            )
+
+            carregar_conhecidos_do_banco()
+
+            return jsonify({"mensagem": "Usuário cadastrado com sucesso!"}), 200
+        else:
+            return jsonify({"erro": "Nenhum rosto detectado na foto."}), 400
+
     except Exception as e:
         return jsonify({"erro": f"Falha interna ao processar cadastro: {e}"}), 500
 

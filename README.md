@@ -115,3 +115,5 @@ Arraste o atalho que você acabou de criar para dentro dessa pasta.
 <p>O Teste de Estresse: Peça para as pessoas passarem na frente do totem usando óculos, com o cabelo diferente ou em duplas.</p>
 
 <p>Validação: Verifique se as mensagens estão chegando em até 5 segundos no celular após a tela verde de "Acesso Liberado" aparecer.</p>
+
+Victor S. | 🔱🪽

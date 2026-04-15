@@ -19,6 +19,9 @@ http://127.0.0.1:5001/api/relatorio
 
 # Bibliotes necessarias:
 
+Nota: As bibliotecas terao que ser instaladas no diretorio: C:\script\reconhecimento-afeto\core-reconhecimento
+(crie uma venv antes de fazer a instalacao)
+
 ```python
 
 pip install "setuptools<81"
@@ -30,6 +33,8 @@ pip install face_recognition
 pip install flask
 
 pip install opencv-python
+
+pip install waitress
 
 ```
 
@@ -59,6 +64,13 @@ npm run build
 ```powershell
 # Instalacao de dependencias
 npm run start:prod
+```
+
+================== Configuração de BAT file ==================
+
+```
+Chave para acessar a API:
+AFETOEIFPI
 ```
 
 ================== Configuração de BAT file ==================
@@ -103,3 +115,5 @@ Arraste o atalho que você acabou de criar para dentro dessa pasta.
 <p>O Teste de Estresse: Peça para as pessoas passarem na frente do totem usando óculos, com o cabelo diferente ou em duplas.</p>
 
 <p>Validação: Verifique se as mensagens estão chegando em até 5 segundos no celular após a tela verde de "Acesso Liberado" aparecer.</p>
+
+Victor S. | 🔱🪽

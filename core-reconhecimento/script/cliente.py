@@ -5,6 +5,7 @@ import numpy as np
 
 # CONFIGURAÇÕES
 URL_SERVIDOR = "http://127.0.0.1:5001/api"
+HEADERS_SEGURANCA = {"x-api-key": "AFETOEIFPI"}
 LARGURA_TELA = 1920
 ALTURA_TELA = 1080
 INTERVALO_SCAN = 1.0
@@ -145,7 +146,9 @@ def enviar_cadastro_para_servidor():
 
     try:
         url = URL_SERVIDOR + "/cadastrar_direto"
-        resposta = requests.post(url, files=files, data=data, timeout=120)
+        resposta = requests.post(
+            url, files=files, data=data, headers=HEADERS_SEGURANCA, timeout=120
+        )
 
         if resposta.status_code == 201:
             dados = resposta.json()
@@ -226,6 +229,7 @@ while True:
                     resposta = requests.post(
                         url,
                         files={"foto": ("frame.jpg", buffer.tobytes(), "image/jpeg")},
+                        headers=HEADERS_SEGURANCA,
                         timeout=2,
                     )
                     if resposta.status_code == 200:

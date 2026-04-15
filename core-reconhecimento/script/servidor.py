@@ -10,6 +10,8 @@ from flask import Flask, jsonify, request
 import threading
 import requests
 import time
+from functools import wraps
+from waitress import serve
 
 # CONFIGURAÇÕES
 ARQUIVO_DADOS = "encodings.pickle"
@@ -17,11 +19,26 @@ BANCO_DADOS = "totem_banco.db"
 PASTA_LOGS = "logs_imagens"
 PASTA_DATASET = "dataset"
 DELAY_RECONHECIMENTO = 5.0
+CHAVE_SECRETA_CLINICA = "AFETOEIFPI"
 
+# variaveis globais de memoria
 app = Flask(__name__)
 lock = threading.Lock()
 lista_encodings = []
 lista_nomes = []
+conhecidos_encodings = []
+conhecidos_nomes = []
+
+
+def validar_api_key(f):
+    @wraps(f)
+    def funcao_protegida(*args, **kwargs):
+        chave_recebida = request.headers.get("x-api-key")
+        if chave_recebida == CHAVE_SECRETA_CLINICA:
+            return f(*args, **kwargs)
+        return jsonify({"erro": "Acesso Negado: Chave de segurança inválida"}), 403
+
+    return funcao_protegida
 
 
 # --- BANCO DE DADOS E ARMAZENAMENTO ---
@@ -37,7 +54,9 @@ def iniciar_banco():
             nome TEXT UNIQUE,
             data_cadastro DATETIME,
             nivel_acesso TEXT,
-            telefone_responsavel TEXT
+            telefone_responsavel TEXT,
+            consentimento_lgpd BOOLEAN DEFAULT 1,
+            face_encoding BLOB
         )
     """
     )
@@ -57,13 +76,15 @@ def iniciar_banco():
     conn.close()
 
 
-def cadastrar_usuario_db(nome, nivel="Aluno", telefone=None):
+def cadastrar_usuario_db(nome, encoding, nivel="Paciente", telefone=None):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
     try:
+        encoding_bytes = encoding.tobytes()
+
         c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel) VALUES (?, ?, ?, ?)",
-            (nome, datetime.now(), nivel, telefone),
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel, consentimento_lgpd, face_encoding) VALUES (?, ?, ?, ?, ?, ?)",
+            (nome, datetime.now(), nivel, telefone, 1, encoding_bytes),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -117,43 +138,61 @@ def alinhar_rostos(image_rgb, face_location):
 def registrar_acesso_db(nome, confianca, frame_capturado):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
-    c.execute("SELECT id FROM Usuarios WHERE nome = ?", (nome,))
+    c.execute("SELECT id, telefone_responsavel FROM Usuarios WHERE nome = ?", (nome,))
     row = c.fetchone()
 
+    telefone_resp = None
+
     if not row:
-        c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso) VALUES (?, ?, ?)",
-            (nome, datetime.now(), "Migrado"),
-        )
-        conn.commit()
-        user_id = c.lastrowid
+        conn.close()
+        return
     else:
         user_id = row[0]
+        telefone_resp = row[1]
 
     agora_dt = datetime.now()
-    nome_arquivo = f"{PASTA_LOGS}/{agora_dt.strftime('%Y%m%d_%H%M%S')}_{nome.replace(' ', '_')}.jpg"
-    cv2.imwrite(nome_arquivo, frame_capturado)
-
     c.execute(
         """
         INSERT INTO Logs_Acesso (usuario_id, data_hora, confianca_reconhecimento, foto_momento)
         VALUES (?, ?, ?, ?)
     """,
-        (user_id, agora_dt, confianca, nome_arquivo),
+        (user_id, agora_dt, confianca, "Imagem retida por privacidade (LGPD)"),
     )
     conn.commit()
     conn.close()
 
+    if telefone_resp:
+        threading.Thread(
+            target=enviar_whatsapp_assincrono, args=(nome, telefone_resp)
+        ).start()
 
-def carregar_dados():
-    global lista_encodings, lista_nomes
-    try:
-        with open(ARQUIVO_DADOS, "rb") as f:
-            data = pickle.load(f)
-        lista_encodings = data["encodings"]
-        lista_nomes = data["names"]
-    except FileNotFoundError:
-        lista_encodings, lista_nomes = [], []
+
+def carregar_conhecidos_do_banco():
+    global conhecidos_encodings, conhecidos_nomes
+    conhecidos_encodings.clear()
+    conhecidos_nomes.clear()
+
+    conn = sqlite3.connect(BANCO_DADOS)
+    c = conn.cursor()
+    c.execute(
+        "SELECT nome, face_encoding FROM Usuarios WHERE face_encoding IS NOT NULL"
+    )
+    linhas = c.fetchall()
+
+    for linha in linhas:
+        nome = linha[0]
+        encoding_bytes = linha[1]
+
+        # Converte de volta: de Binário para o array matemático (float64) exigido pelo OpenCV/FaceRecognition
+        encoding_array = np.frombuffer(encoding_bytes, dtype=np.float64)
+
+        conhecidos_nomes.append(nome)
+        conhecidos_encodings.append(encoding_array)
+
+    conn.close()
+    print(
+        f"[Banco de Dados] {len(conhecidos_nomes)} biometrias carregadas com sucesso."
+    )
 
 
 def salvar_dados():
@@ -293,6 +332,7 @@ def registrar_acesso_db(nome, confianca, frame_capturado):
 
 # --- ROTAS DA API ---
 @app.route("/api/reconhecer", methods=["POST"])
+@validar_api_key
 def reconhecer_rosto():
     if "foto" not in request.files:
         return jsonify({"erro": "Nenhuma foto enviada"}), 400
@@ -345,35 +385,43 @@ def reconhecer_rosto():
 
 
 @app.route("/api/cadastrar_direto", methods=["POST"])
+@validar_api_key
+@app.route("/api/cadastrar_direto", methods=["POST"])
+@validar_api_key
 def cadastrar_direto():
-    global lista_encodings, lista_nomes
-    if "fotos" not in request.files or "nome" not in request.form:
-        return jsonify({"erro": "Dados incompletos. Envie 'fotos' e 'nome'."}), 400
-
-    files = request.files.getlist("fotos")
-    name = request.form["nome"]
-    telefone = request.form.get("telefone", "")
-    lista_fotos = []
-
-    for file in files:
-        img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
-        lista_fotos.append(img)
-
     try:
-        total_treinado = treinar_novas_fotos(name, lista_fotos, telefone)
-        return (
-            jsonify(
-                {
-                    "msg": f"Sucesso! {name} cadastrado com {total_treinado} novos vetores faciais."
-                }
-            ),
-            201,
-        )
+        nome = request.form.get("nome")
+        telefone = request.form.get("telefone")
+
+        if not nome or "foto" not in request.files:
+            return jsonify({"erro": "Nome ou foto ausente"}), 400
+
+        foto = request.files["foto"]
+
+        file_bytes = np.frombuffer(foto.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        encodings = face_recognition.face_encodings(rgb_img)
+        if len(encodings) > 0:
+            encoding_capturado = encodings[0]
+
+            cadastrar_usuario_db(
+                nome, encoding_capturado, nivel="Paciente", telefone=telefone
+            )
+
+            carregar_conhecidos_do_banco()
+
+            return jsonify({"mensagem": "Usuário cadastrado com sucesso!"}), 200
+        else:
+            return jsonify({"erro": "Nenhum rosto detectado na foto."}), 400
+
     except Exception as e:
         return jsonify({"erro": f"Falha interna ao processar cadastro: {e}"}), 500
 
 
 @app.route("/api/relatorio", methods=["GET"])
+@validar_api_key
 def relatorio_acessos():
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
@@ -395,5 +443,15 @@ def relatorio_acessos():
 
 if __name__ == "__main__":
     iniciar_banco()
-    carregar_dados()
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    carregar_conhecidos_do_banco()
+
+    print("===================================================")
+    print("🚀 SERVIDOR DE PRODUÇÃO (WAITRESS) INICIADO")
+    print("🏥 Clínica: Instituto Afeto")
+    print("📡 Escutando na porta: 5001")
+    print("===================================================")
+
+    # O Waitress gerencia múltiplas threads.
+    # Colocamos threads=6 para lidar com vários reconhecimentos
+    # simultâneos sem criar gargalos na CPU.
+    serve(app, host="0.0.0.0", port=5001, threads=6)

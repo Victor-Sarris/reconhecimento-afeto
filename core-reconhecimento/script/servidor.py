@@ -386,9 +386,7 @@ def reconhecer_rosto():
 
 @app.route("/api/cadastrar_direto", methods=["POST"])
 @validar_api_key
-@app.route("/api/cadastrar_direto", methods=["POST"])
-@validar_api_key
-def cadastrar_direto():
+def processar_cadastro_direto():
     try:
         nome = request.form.get("nome")
         telefone = request.form.get("telefone")

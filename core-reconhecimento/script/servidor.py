@@ -76,15 +76,13 @@ def iniciar_banco():
     conn.close()
 
 
-def cadastrar_usuario_db(nome, encoding, nivel="Paciente", telefone=None):
+def cadastrar_usuario_db(nome, nivel="Aluno", telefone=None):
     conn = sqlite3.connect(BANCO_DADOS)
     c = conn.cursor()
     try:
-        encoding_bytes = encoding.tobytes()
-
         c.execute(
-            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel, consentimento_lgpd, face_encoding) VALUES (?, ?, ?, ?, ?, ?)",
-            (nome, datetime.now(), nivel, telefone, 1, encoding_bytes),
+            "INSERT INTO Usuarios (nome, data_cadastro, nivel_acesso, telefone_responsavel) VALUES (?, ?, ?, ?)",
+            (nome, datetime.now(), nivel, telefone),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -385,38 +383,34 @@ def reconhecer_rosto():
 
 
 @app.route("/api/cadastrar_direto", methods=["POST"])
-@validar_api_key
-def processar_cadastro_direto():
-    try:
-        nome = request.form.get("nome")
-        telefone = request.form.get("telefone")
+def cadastrar_direto():
+    global lista_encodings, lista_nomes
 
-        if "fotos" not in request.files or "nome" not in request.form:
-            return jsonify({"erro": "Nome ou foto ausente"}), 400
+    if "fotos" not in request.files or "nome" not in request.form:
+        return jsonify({"erro": "Nome ou foto ausente"}), 400
 
-        fotos_enviadas = request.files.getlist("fotos")
+    files = request.files.getlist("fotos")
+    name = request.form["nome"]
+    telefone = request.form.get("telefone", "")
 
-        foto = fotos_enviadas[0]
+    lista_fotos = []
 
-        file_bytes = np.frombuffer(foto.read(), np.uint8)
+    for file in files:
+        file_bytes = np.frombuffer(file.read(), np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        lista_fotos.append(img)
 
-        encodings = face_recognition.face_encodings(rgb_img)
+    try:
+        total_treinado = treinar_novas_fotos(name, lista_fotos, telefone)
 
-        if len(encodings) > 0:
-            encoding_capturado = encodings[0]
-
-            cadastrar_usuario_db(
-                nome, encoding_capturado, nivel="Paciente", telefone=telefone
-            )
-
-            carregar_conhecidos_do_banco()
-
-            return jsonify({"msg": "Usuário cadastrado com sucesso!"}), 201
-        else:
-            return jsonify({"erro": "Nenhum rosto detectado na foto."}), 400
-
+        return (
+            jsonify(
+                {
+                    "msg": f"Sucesso! {name} cadastrado com {total_treinado} novos vetores faciais."
+                }
+            ),
+            201,
+        )
     except Exception as e:
         return jsonify({"erro": f"Falha interna ao processar cadastro: {e}"}), 500
 

@@ -391,16 +391,19 @@ def processar_cadastro_direto():
         nome = request.form.get("nome")
         telefone = request.form.get("telefone")
 
-        if not nome or "foto" not in request.files:
+        if "fotos" not in request.files or "nome" not in request.form:
             return jsonify({"erro": "Nome ou foto ausente"}), 400
 
-        foto = request.files["foto"]
+        fotos_enviadas = request.files.getlist("fotos")
+
+        foto = fotos_enviadas[0]
 
         file_bytes = np.frombuffer(foto.read(), np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         encodings = face_recognition.face_encodings(rgb_img)
+
         if len(encodings) > 0:
             encoding_capturado = encodings[0]
 
@@ -410,7 +413,7 @@ def processar_cadastro_direto():
 
             carregar_conhecidos_do_banco()
 
-            return jsonify({"mensagem": "Usuário cadastrado com sucesso!"}), 200
+            return jsonify({"msg": "Usuário cadastrado com sucesso!"}), 201
         else:
             return jsonify({"erro": "Nenhum rosto detectado na foto."}), 400
 
